@@ -1,0 +1,418 @@
+package Market::Panels::ATRPanel;
+
+use strict;
+use warnings;
+
+sub new {
+    my ($class) = @_;
+
+    my $self = {
+
+        scale => undef,
+    };
+
+    bless $self, $class;
+
+    return $self;
+}
+
+# =========================================================
+# SCALE
+# =========================================================
+
+sub set_scale {
+    my ($self, $scale) = @_;
+
+    $self->{scale} = $scale;
+}
+
+# =========================================================
+# Y RANGE
+# =========================================================
+
+sub get_y_range {
+    my ($self, $values) = @_;
+
+    my $min = $values->[0];
+
+    my $max = $values->[0];
+
+    for my $v (@$values) {
+
+        if ($v < $min) {
+
+            $min = $v;
+        }
+
+        if ($v > $max) {
+
+            $max = $v;
+        }
+    }
+
+    my $padding =
+        ($max - $min) * 0.15;
+
+    $min -= $padding;
+
+    $max += $padding;
+
+    return ($min, $max);
+}
+
+# =========================================================
+# RENDER
+# =========================================================
+
+sub render {
+    my (
+        $self,
+        $canvas,
+        $values,
+        $scale,
+        $engine
+    ) = @_;
+
+    $self->{scale} = $scale;
+
+    my $width =
+        $canvas->Width;
+
+    my $height =
+        $canvas->Height;
+
+    my $right_axis_width =
+        $engine->{right_axis_width};
+
+    my $bottom_axis_height =
+        $engine->{bottom_axis_height};
+
+    my $chart_width =
+        $width
+        - $right_axis_width;
+
+    my $chart_height =
+        $height
+        - $bottom_axis_height;
+
+    my $bar_width =
+        $scale->{bar_width};
+
+    # =====================================================
+    # BACKGROUND
+    # =====================================================
+
+    $canvas->createRectangle(
+
+        0,
+        0,
+        $width,
+        $height,
+
+        -fill =>
+            '#111827',
+
+        -outline =>
+            '#111827',
+
+        -tags => 'atr_render',
+    );
+
+    # =====================================================
+    # RIGHT AXIS BACKGROUND
+    # =====================================================
+
+    $canvas->createRectangle(
+
+        $chart_width,
+        0,
+        $width,
+        $chart_height,
+
+        -fill =>
+            $engine->{axis_background},
+
+        -outline =>
+            $engine->{grid_color},
+
+        -tags => 'atr_render',
+    );
+
+    # =====================================================
+    # BOTTOM AXIS BACKGROUND
+    # =====================================================
+
+    $canvas->createRectangle(
+
+        0,
+        $chart_height,
+        $chart_width,
+        $height,
+
+        -fill =>
+            $engine->{axis_background},
+
+        -outline =>
+            $engine->{grid_color},
+
+        -tags => 'atr_render',
+    );
+
+    # =====================================================
+    # GRID
+    # =====================================================
+
+    my $horizontal_lines = 5;
+
+    my $vertical_lines = 12;
+
+    for my $i (0 .. $horizontal_lines) {
+
+        my $y =
+            ($chart_height
+            / $horizontal_lines)
+            * $i;
+
+        $canvas->createLine(
+
+            0,
+            $y,
+            $chart_width,
+            $y,
+
+            -fill =>
+                $engine->{grid_color},
+
+            -tags => 'atr_render',
+        );
+    }
+
+    for my $i (0 .. $vertical_lines) {
+
+        my $x =
+            ($chart_width
+            / $vertical_lines)
+            * $i;
+
+        $canvas->createLine(
+
+            $x,
+            0,
+            $x,
+            $chart_height,
+
+            -fill =>
+                $engine->{grid_color},
+
+            -tags => 'atr_render',
+        );
+    }
+
+    # =====================================================
+    # ATR LABELS
+    # =====================================================
+
+    my $min =
+        $scale->{min_value};
+
+    my $max =
+        $scale->{max_value};
+
+    for my $i (0 .. $horizontal_lines) {
+
+        my $y =
+            ($chart_height
+            / $horizontal_lines)
+            * $i;
+
+        my $value =
+            $max
+            - (
+                ($max - $min)
+                * ($i / $horizontal_lines)
+            );
+
+        $canvas->createText(
+
+            $chart_width + 45,
+            $y,
+
+            -text =>
+                sprintf("%.2f", $value),
+
+            -fill =>
+                $engine->{text_color},
+
+            -font => [
+                'Arial',
+                9
+            ],
+
+            -tags => 'atr_render',
+        );
+    }
+
+    # =====================================================
+    # ATR LINE
+    # =====================================================
+
+    for my $i (1 .. $#$values) {
+
+        my $x1 =
+            (($i - 1) * $bar_width)
+            + ($bar_width / 2);
+
+        my $x2 =
+            ($i * $bar_width)
+            + ($bar_width / 2);
+
+        next
+            if $x1 < 0;
+
+        next
+            if $x2 > $chart_width;
+
+        my $y1 =
+            $scale->value_to_y(
+                $values->[$i - 1]
+            );
+
+        my $y2 =
+            $scale->value_to_y(
+                $values->[$i]
+            );
+
+        $canvas->createLine(
+
+            $x1,
+            $y1,
+            $x2,
+            $y2,
+
+            -fill => '#f59e0b',
+
+            -width => 2,
+
+            -smooth => 1,
+
+            -tags => 'atr_render',
+        );
+    }
+
+    # =====================================================
+    # TITLE
+    # =====================================================
+
+    $canvas->createText(
+
+        10,
+        10,
+
+        -text => 'ATR (14)',
+
+        -anchor => 'w',
+
+        -fill => '#f59e0b',
+
+        -font => [
+            'Arial',
+            10,
+            'bold'
+        ],
+
+        -tags => 'atr_render',
+    );
+}
+
+# =========================================================
+# CROSSHAIR LABELS
+# =========================================================
+
+sub render_crosshair_labels {
+    my (
+        $self,
+        $canvas,
+        $scale,
+        $engine
+    ) = @_;
+
+    my $width =
+        $canvas->Width;
+
+    my $height =
+        $canvas->Height;
+
+    my $right_axis_width =
+        $engine->{right_axis_width};
+
+    my $bottom_axis_height =
+        $engine->{bottom_axis_height};
+
+    my $chart_width =
+        $width
+        - $right_axis_width;
+
+    my $chart_height =
+        $height
+        - $bottom_axis_height;
+
+    my $mx =
+        $engine->{mouse_x};
+
+    my $my =
+        $engine->{mouse_y};
+
+    return
+        unless defined $mx
+        && defined $my;
+
+    return
+        unless $mx >= 0
+        && $mx <= $chart_width
+        && $my >= 0
+        && $my <= $chart_height;
+
+    my $atr_value =
+        $scale->y_to_value($my);
+
+    # =====================================================
+    # RIGHT VALUE LABEL
+    # =====================================================
+
+    $canvas->createRectangle(
+
+        $chart_width,
+        $my - 10,
+        $width,
+        $my + 10,
+
+        -fill =>
+            '#334155',
+
+        -outline =>
+            '#334155',
+
+        -tags => 'crosshair',
+    );
+
+    $canvas->createText(
+
+        $chart_width + 45,
+        $my,
+
+        -text =>
+            sprintf("%.2f", $atr_value),
+
+        -fill => '#ffffff',
+
+        -font => [
+            'Arial',
+            9,
+            'bold'
+        ],
+
+        -tags => 'crosshair',
+    );
+}
+
+1;
