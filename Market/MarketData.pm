@@ -3,6 +3,11 @@ package Market::MarketData;
 use strict;
 use warnings;
 
+use File::Basename qw(dirname);
+use lib dirname(dirname(__FILE__));
+
+use Market::TimeframeAggregator;
+
 sub new {
     my ($class, %args) = @_;
 
@@ -12,6 +17,10 @@ sub new {
             $args{file},
 
         candles => [],
+
+        _timeframe_data => {},
+
+        _current_timeframe => 1,
     };
 
     bless $self, $class;
@@ -19,6 +28,9 @@ sub new {
     $self->load_data(
         $self->{file}
     );
+
+    $self->{_active_candles}
+        = $self->{candles};
 
     return $self;
 }
@@ -86,13 +98,56 @@ sub load_data {
 }
 
 # =========================================================
+# TIMEFRAME MANAGEMENT
+# =========================================================
+
+sub set_timeframe {
+    my ($self, $minutes) = @_;
+
+    $self->{_current_timeframe}
+        = $minutes;
+
+    if ($minutes <= 1) {
+
+        $self->{_active_candles}
+            = $self->{candles};
+
+        return;
+    }
+
+    unless (
+        exists $self->{_timeframe_data}
+            {$minutes}
+    ) {
+
+        $self->{_timeframe_data}{$minutes}
+            = Market::TimeframeAggregator->aggregate(
+                $self->{candles},
+                $minutes
+            );
+    }
+
+    $self->{_active_candles}
+        = $self->{_timeframe_data}
+            {$minutes};
+}
+
+sub get_timeframe {
+    my ($self) = @_;
+
+    return
+        $self->{_current_timeframe};
+}
+
+# =========================================================
 # GET ALL CANDLES
 # =========================================================
 
 sub candles {
     my ($self) = @_;
 
-    return $self->{candles};
+    return
+        $self->{_active_candles};
 }
 
 # =========================================================
@@ -103,7 +158,7 @@ sub size {
     my ($self) = @_;
 
     return scalar
-        @{$self->{candles}};
+        @{$self->{_active_candles}};
 }
 
 # =========================================================
@@ -121,11 +176,11 @@ sub get {
 
     return undef
         if $index > $#{
-            $self->{candles}
+            $self->{_active_candles}
         };
 
     return
-        $self->{candles}[$index];
+        $self->{_active_candles}[$index];
 }
 
 # =========================================================
@@ -143,16 +198,16 @@ sub get_slice {
         if $start < 0;
 
     $end =
-        $#{$self->{candles}}
+        $#{$self->{_active_candles}}
         if $end > $#{
-            $self->{candles}
+            $self->{_active_candles}
         };
 
     return []
         if $start > $end;
 
     my @slice =
-        @{$self->{candles}}[
+        @{$self->{_active_candles}}[
             $start .. $end
         ];
 
@@ -243,7 +298,7 @@ sub last_index {
     my ($self) = @_;
 
     return
-        $#{$self->{candles}};
+        $#{$self->{_active_candles}};
 }
 
 1;

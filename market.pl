@@ -52,6 +52,63 @@ $mw->configure(
 );
 
 # =========================================================
+# TIMEFRAME TOOLBAR
+# =========================================================
+
+my $toolbar =
+    $mw->Frame(
+
+        -bg => '#1e293b'
+    )->pack(
+
+        -side => 'top',
+
+        -fill => 'x'
+    );
+
+my $tf_label = $toolbar->Label(
+
+    -text => 'Timeframe: ',
+
+    -fg => '#94a3b8',
+
+    -bg => '#1e293b',
+
+    -font => [
+        'Arial',
+        10
+    ],
+)->pack(
+
+    -side => 'left',
+
+    -padx => 5,
+
+    -pady => 3
+);
+
+my $shortcut_label = $toolbar->Label(
+
+    -text => '  |  Keys: 1=1m  5=5m  6=15m  |  Ctrl+Scroll=Zoom V  |  Drag=Scroll',
+
+    -fg => '#64748b',
+
+    -bg => '#1e293b',
+
+    -font => [
+        'Arial',
+        9
+    ],
+)->pack(
+
+    -side => 'left',
+
+    -padx => 10,
+
+    -pady => 3
+);
+
+# =========================================================
 # MAIN CONTAINER
 # =========================================================
 
@@ -80,6 +137,8 @@ my $price_canvas =
         -background => '#0f172a',
 
         -highlightthickness => 0,
+
+        -takefocus => 1,
     )->pack(
 
         -side => 'top',
@@ -131,6 +190,61 @@ my $engine =
     );
 
 # =========================================================
+# TIMEFRAME DROPDOWN (after engine is created)
+# =========================================================
+
+my $tf_var = '1m';
+
+my $tf_dropdown =
+    $toolbar->Optionmenu(
+
+        -options => [
+            ['1m',  '1'],
+            ['5m',  '5'],
+            ['15m', '15'],
+        ],
+
+        -variable => \$tf_var,
+
+        -command => sub {
+
+            $engine->set_timeframe(
+                $_[0] + 0
+            );
+        },
+
+        -background => '#334155',
+
+        -foreground => '#e2e8f0',
+
+        -activebackground =>
+            '#475569',
+
+        -activeforeground =>
+            '#ffffff',
+
+        -font => [
+            'Arial',
+            9,
+            'bold'
+        ],
+
+        -relief => 'flat',
+
+        -borderwidth => 1,
+
+        -highlightthickness => 0,
+
+    )->pack(
+
+        -side => 'left',
+
+        -padx => 2,
+
+        -pady => 3
+    );
+
+# =========================================================
 # EVENTS
 # =========================================================
 
@@ -160,7 +274,7 @@ $atr_canvas->CanvasBind(
 # INITIAL RENDER
 # =========================================================
 
-$engine->render();
+$engine->render_full();
 
 # =========================================================
 # MAIN LOOP

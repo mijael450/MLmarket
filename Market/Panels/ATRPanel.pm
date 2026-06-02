@@ -61,10 +61,152 @@ sub get_y_range {
 }
 
 # =========================================================
-# RENDER
+# RENDER STATIC
 # =========================================================
 
-sub render {
+sub render_static {
+    my (
+        $self,
+        $canvas,
+        $engine
+    ) = @_;
+
+    my $width =
+        $canvas->Width;
+
+    my $height =
+        $canvas->Height;
+
+    my $right_axis_width =
+        $engine->{right_axis_width};
+
+    my $bottom_axis_height =
+        $engine->{bottom_axis_height};
+
+    my $chart_width =
+        $width
+        - $right_axis_width;
+
+    my $chart_height =
+        $height
+        - $bottom_axis_height;
+
+    # =====================================================
+    # BACKGROUND
+    # =====================================================
+
+    $canvas->createRectangle(
+
+        0,
+        0,
+        $width,
+        $height,
+
+        -fill =>
+            '#111827',
+
+        -outline =>
+            '#111827',
+
+        -tags => 'static_render',
+    );
+
+    # =====================================================
+    # RIGHT AXIS BACKGROUND
+    # =====================================================
+
+    $canvas->createRectangle(
+
+        $chart_width,
+        0,
+        $width,
+        $chart_height,
+
+        -fill =>
+            $engine->{axis_background},
+
+        -outline =>
+            $engine->{grid_color},
+
+        -tags => 'static_render',
+    );
+
+    # =====================================================
+    # BOTTOM AXIS BACKGROUND
+    # =====================================================
+
+    $canvas->createRectangle(
+
+        0,
+        $chart_height,
+        $chart_width,
+        $height,
+
+        -fill =>
+            $engine->{axis_background},
+
+        -outline =>
+            $engine->{grid_color},
+
+        -tags => 'static_render',
+    );
+
+    # =====================================================
+    # GRID
+    # =====================================================
+
+    my $horizontal_lines = 5;
+
+    my $vertical_lines = 12;
+
+    for my $i (0 .. $horizontal_lines) {
+
+        my $y =
+            ($chart_height
+            / $horizontal_lines)
+            * $i;
+
+        $canvas->createLine(
+
+            0,
+            $y,
+            $chart_width,
+            $y,
+
+            -fill =>
+                $engine->{grid_color},
+
+            -tags => 'static_render',
+        );
+    }
+
+    for my $i (0 .. $vertical_lines) {
+
+        my $x =
+            ($chart_width
+            / $vertical_lines)
+            * $i;
+
+        $canvas->createLine(
+
+            $x,
+            0,
+            $x,
+            $chart_height,
+
+            -fill =>
+                $engine->{grid_color},
+
+            -tags => 'static_render',
+        );
+    }
+}
+
+# =========================================================
+# RENDER DYNAMIC
+# =========================================================
+
+sub render_dynamic {
     my (
         $self,
         $canvas,
@@ -99,116 +241,6 @@ sub render {
         $scale->{bar_width};
 
     # =====================================================
-    # BACKGROUND
-    # =====================================================
-
-    $canvas->createRectangle(
-
-        0,
-        0,
-        $width,
-        $height,
-
-        -fill =>
-            '#111827',
-
-        -outline =>
-            '#111827',
-
-        -tags => 'atr_render',
-    );
-
-    # =====================================================
-    # RIGHT AXIS BACKGROUND
-    # =====================================================
-
-    $canvas->createRectangle(
-
-        $chart_width,
-        0,
-        $width,
-        $chart_height,
-
-        -fill =>
-            $engine->{axis_background},
-
-        -outline =>
-            $engine->{grid_color},
-
-        -tags => 'atr_render',
-    );
-
-    # =====================================================
-    # BOTTOM AXIS BACKGROUND
-    # =====================================================
-
-    $canvas->createRectangle(
-
-        0,
-        $chart_height,
-        $chart_width,
-        $height,
-
-        -fill =>
-            $engine->{axis_background},
-
-        -outline =>
-            $engine->{grid_color},
-
-        -tags => 'atr_render',
-    );
-
-    # =====================================================
-    # GRID
-    # =====================================================
-
-    my $horizontal_lines = 5;
-
-    my $vertical_lines = 12;
-
-    for my $i (0 .. $horizontal_lines) {
-
-        my $y =
-            ($chart_height
-            / $horizontal_lines)
-            * $i;
-
-        $canvas->createLine(
-
-            0,
-            $y,
-            $chart_width,
-            $y,
-
-            -fill =>
-                $engine->{grid_color},
-
-            -tags => 'atr_render',
-        );
-    }
-
-    for my $i (0 .. $vertical_lines) {
-
-        my $x =
-            ($chart_width
-            / $vertical_lines)
-            * $i;
-
-        $canvas->createLine(
-
-            $x,
-            0,
-            $x,
-            $chart_height,
-
-            -fill =>
-                $engine->{grid_color},
-
-            -tags => 'atr_render',
-        );
-    }
-
-    # =====================================================
     # ATR LABELS
     # =====================================================
 
@@ -217,6 +249,8 @@ sub render {
 
     my $max =
         $scale->{max_value};
+
+    my $horizontal_lines = 5;
 
     for my $i (0 .. $horizontal_lines) {
 
@@ -303,12 +337,14 @@ sub render {
     # TITLE
     # =====================================================
 
+    my $tf = $engine->{market_data}->get_timeframe();
+
     $canvas->createText(
 
         10,
         10,
 
-        -text => 'ATR (14)',
+        -text => "ATR (14) - ${tf}m",
 
         -anchor => 'w',
 

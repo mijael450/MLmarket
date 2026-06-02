@@ -68,6 +68,16 @@ sub new {
         atr_height => 220,
 
         # =====================================================
+        # VERTICAL ZOOM
+        # =====================================================
+
+        vertical_zoom => 1.0,
+
+        min_vertical_zoom => 0.3,
+
+        max_vertical_zoom => 5.0,
+
+        # =====================================================
         # INTERACTION
         # =====================================================
 
@@ -167,6 +177,47 @@ sub bind_events {
         );
 
         # =====================================================
+        # CTRL ZOOM VERTICAL (WINDOWS)
+        # =====================================================
+
+        $canvas->CanvasBind(
+
+            '<Control-MouseWheel>' => sub {
+
+                my $event = $Tk::event;
+
+                if ($event->delta > 0) {
+
+                    $self->zoom_vertical_in();
+
+                } else {
+
+                    $self->zoom_vertical_out();
+                }
+            }
+        );
+
+        # =====================================================
+        # CTRL ZOOM VERTICAL (LINUX)
+        # =====================================================
+
+        $canvas->CanvasBind(
+
+            '<Control-Button-4>' => sub {
+
+                $self->zoom_vertical_in();
+            }
+        );
+
+        $canvas->CanvasBind(
+
+            '<Control-Button-5>' => sub {
+
+                $self->zoom_vertical_out();
+            }
+        );
+
+        # =====================================================
         # DRAG START
         # =====================================================
 
@@ -253,10 +304,58 @@ sub bind_events {
             }
         );
     }
+
+    # =====================================================
+    # KEYBOARD SHORTCUTS (price canvas)
+    # =====================================================
+
+    my $pc = $self->{price_canvas};
+
+    $pc->CanvasBind(
+        '<Key-1>' => sub {
+            $self->set_timeframe(1);
+        }
+    );
+
+    $pc->CanvasBind(
+        '<Key-5>' => sub {
+            $self->set_timeframe(5);
+        }
+    );
+
+    $pc->CanvasBind(
+        '<Key-6>' => sub {
+            $self->set_timeframe(15);
+        }
+    );
 }
 
 # =========================================================
-# ZOOM
+# TIMEFRAME
+# =========================================================
+
+sub set_timeframe {
+    my ($self, $minutes) = @_;
+
+    return
+        if $minutes
+        == $self->{market_data}->get_timeframe();
+
+    $self->{market_data}->set_timeframe(
+        $minutes
+    );
+
+    $self->{offset} = 0;
+
+    $self->{visible_bars} = 120;
+
+    $self->{indicator_manager}->update_all();
+
+    $self->render_full();
+}
+
+# =========================================================
+# HORIZONTAL ZOOM
 # =========================================================
 
 sub zoom_in {
@@ -270,7 +369,7 @@ sub zoom_in {
 
     $self->_apply_zoom($old, $new, $mouse_x);
 
-    $self->render();
+    $self->render_incremental();
 }
 
 sub zoom_out {
@@ -284,7 +383,7 @@ sub zoom_out {
 
     $self->_apply_zoom($old, $new, $mouse_x);
 
-    $self->render();
+    $self->render_incremental();
 }
 
 sub _apply_zoom {
@@ -344,6 +443,36 @@ sub _apply_zoom {
 }
 
 # =========================================================
+# VERTICAL ZOOM
+# =========================================================
+
+sub zoom_vertical_in {
+    my ($self) = @_;
+
+    $self->{vertical_zoom} /= 1.15;
+
+    $self->{vertical_zoom}
+        = $self->{min_vertical_zoom}
+        if $self->{vertical_zoom}
+        < $self->{min_vertical_zoom};
+
+    $self->render_incremental();
+}
+
+sub zoom_vertical_out {
+    my ($self) = @_;
+
+    $self->{vertical_zoom} *= 1.15;
+
+    $self->{vertical_zoom}
+        = $self->{max_vertical_zoom}
+        if $self->{vertical_zoom}
+        > $self->{max_vertical_zoom};
+
+    $self->render_incremental();
+}
+
+# =========================================================
 # DRAG
 # =========================================================
 
@@ -377,7 +506,7 @@ sub drag_chart {
         = $max_offset
         if $self->{offset} > $max_offset;
 
-    $self->render();
+    $self->render_incremental();
 }
 
 # =========================================================
@@ -404,20 +533,32 @@ sub compute_window {
 }
 
 # =========================================================
-# REQUEST RENDER
+# FULL RENDER
+# =========================================================
+
+sub render_full {
+    my ($self) = @_;
+
+    $self->{_needs_static_redraw} = 1;
+
+    $self->render_incremental();
+}
+
+# =========================================================
+# REQUEST RENDER (from resize)
 # =========================================================
 
 sub request_render {
     my ($self) = @_;
 
-    $self->render();
+    $self->render_full();
 }
 
 # =========================================================
-# RENDER
+# RENDER INCREMENTAL
 # =========================================================
 
-sub render {
+sub render_incremental {
     my ($self) = @_;
 
     my ($start, $end)
@@ -436,24 +577,37 @@ sub render {
         $self->{atr_canvas};
 
     # =====================================================
-    # CLEAN ONLY RENDER TAGS
+    # DELETE APPROPRIATE TAGS
     # =====================================================
 
-    $price_canvas->delete(
-        'price_render'
-    );
+    if ($self->{_needs_static_redraw}) {
 
-    $price_canvas->delete(
-        'crosshair'
-    );
+        $price_canvas->delete(
+            'static_render',
+            'price_render',
+            'crosshair'
+        );
 
-    $atr_canvas->delete(
-        'atr_render'
-    );
+        $atr_canvas->delete(
+            'static_render',
+            'atr_render',
+            'crosshair'
+        );
 
-    $atr_canvas->delete(
-        'crosshair'
-    );
+        $self->{_needs_static_redraw} = 0;
+
+    } else {
+
+        $price_canvas->delete(
+            'price_render',
+            'crosshair'
+        );
+
+        $atr_canvas->delete(
+            'atr_render',
+            'crosshair'
+        );
+    }
 
     # =====================================================
     # DIMENSIONS
@@ -476,7 +630,9 @@ sub render {
         $price_height
         - $self->{bottom_axis_height};
 
-    my $bar_width = $chart_width / $self->{visible_bars};
+    my $bar_width =
+        $chart_width
+        / $self->{visible_bars};
 
     # =====================================================
     # PRICE SCALE
@@ -485,6 +641,20 @@ sub render {
     my ($min_price, $max_price)
         = $self->{price_panel}
         ->get_y_range($data);
+
+    # apply vertical zoom
+    my $center =
+        ($min_price + $max_price) / 2;
+
+    my $half_range =
+        ($max_price - $min_price) / 2
+        * $self->{vertical_zoom};
+
+    $min_price =
+        $center - $half_range;
+
+    $max_price =
+        $center + $half_range;
 
     my $price_scale =
         Market::Panels::Scales->new(
@@ -533,10 +703,31 @@ sub render {
     );
 
     # =====================================================
-    # RENDER PANELS
+    # RENDER STATIC (full redraw only)
     # =====================================================
 
-    $self->{price_panel}->render(
+    if ($self->{_needs_static_redraw}) {
+
+        $self->{price_panel}->render_static(
+
+            $price_canvas,
+            $self
+        );
+
+        $self->{atr_panel}->render_static(
+
+            $atr_canvas,
+            $self
+        );
+    }
+
+    $self->{_needs_static_redraw} = 0;
+
+    # =====================================================
+    # RENDER DYNAMIC
+    # =====================================================
+
+    $self->{price_panel}->render_dynamic(
 
         $price_canvas,
 
@@ -547,7 +738,7 @@ sub render {
         $self
     );
 
-    $self->{atr_panel}->render(
+    $self->{atr_panel}->render_dynamic(
 
         $atr_canvas,
 
