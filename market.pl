@@ -46,6 +46,10 @@ $mw->title(
 
 $mw->geometry('1400x900');
 
+eval { $mw->attributes('-zoomed', 1) }
+    || eval { $mw->wm('state', 'zoomed') }
+    || eval { $mw->geometry('1920x1080+0+0') };
+
 $mw->configure(
 
     -bg => '#0f172a'

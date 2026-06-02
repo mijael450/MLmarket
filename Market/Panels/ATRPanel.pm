@@ -212,7 +212,8 @@ sub render_dynamic {
         $canvas,
         $values,
         $scale,
-        $engine
+        $engine,
+        $offset
     ) = @_;
 
     $self->{scale} = $scale;
@@ -239,6 +240,9 @@ sub render_dynamic {
 
     my $bar_width =
         $scale->{bar_width};
+
+    my $visible_bars =
+        $engine->{visible_bars};
 
     # =====================================================
     # ATR LABELS
@@ -287,24 +291,44 @@ sub render_dynamic {
     }
 
     # =====================================================
-    # ATR LINE
+    # ATR LINE (viewport-aware)
     # =====================================================
 
     for my $i (1 .. $#$values) {
 
+        my $prev_global =
+            $offset + $i - 1;
+
+        my $curr_global =
+            $offset + $i;
+
+        my $prev_vp =
+            $prev_global
+            - $engine->{offset};
+
+        my $curr_vp =
+            $curr_global
+            - $engine->{offset};
+
+        next
+            if $prev_vp < 0
+            && $curr_vp < 0;
+
+        next
+            if $prev_vp >= $visible_bars
+            && $curr_vp >= $visible_bars;
+
         my $x1 =
-            (($i - 1) * $bar_width)
+            ($prev_vp * $bar_width)
             + ($bar_width / 2);
 
         my $x2 =
-            ($i * $bar_width)
+            ($curr_vp * $bar_width)
             + ($bar_width / 2);
 
         next
-            if $x1 < 0;
-
-        next
-            if $x2 > $chart_width;
+            if $x1 > $chart_width
+            && $x2 > $chart_width;
 
         my $y1 =
             $scale->value_to_y(
@@ -392,19 +416,24 @@ sub render_crosshair_labels {
         $height
         - $bottom_axis_height;
 
-    my $mx =
-        $engine->{mouse_x};
+    my $snapped_x =
+        $engine->{crosshair_snapped_x};
+
+    my $my_atr =
+        $engine->{mouse_y_atr};
 
     my $my =
-        $engine->{mouse_y};
+        defined $my_atr
+        ? $my_atr
+        : $engine->{mouse_y};
 
     return
-        unless defined $mx
+        unless defined $snapped_x
         && defined $my;
 
     return
-        unless $mx >= 0
-        && $mx <= $chart_width
+        unless $snapped_x >= 0
+        && $snapped_x <= $chart_width
         && $my >= 0
         && $my <= $chart_height;
 
@@ -449,6 +478,61 @@ sub render_crosshair_labels {
 
         -tags => 'crosshair',
     );
+
+    # =====================================================
+    # TIME LABEL (sincronizada)
+    # =====================================================
+
+    my $index =
+        $engine->{crosshair_index};
+
+    my $data =
+        $engine->{_last_data};
+
+    if (
+        defined $index
+        && defined $data
+        && $index >= 0
+        && $index < @$data
+    ) {
+
+        my $time =
+            $data->[$index]{time};
+
+        $canvas->createRectangle(
+
+            $snapped_x - 40,
+            $chart_height,
+            $snapped_x + 40,
+            $height,
+
+            -fill =>
+                '#334155',
+
+            -outline =>
+                '#334155',
+
+            -tags => 'crosshair',
+        );
+
+        $canvas->createText(
+
+            $snapped_x,
+            $chart_height + 14,
+
+            -text => $time,
+
+            -fill => '#ffffff',
+
+            -font => [
+                'Arial',
+                8,
+                'bold'
+            ],
+
+            -tags => 'crosshair',
+        );
+    }
 }
 
 1;

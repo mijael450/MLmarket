@@ -85,13 +85,27 @@ sub new {
 
         drag_start_x => 0,
 
+        drag_start_y => 0,
+
         drag_initial_offset => 0,
+
+        vertical_dragging => 0,
+
+        vertical_drag_start_y => 0,
+
+        vertical_drag_initial_pan => 0,
+
+        vertical_pan => 0,
 
         mouse_x => undef,
 
         mouse_y => undef,
 
+        mouse_y_atr => undef,
+
         crosshair_index => undef,
+
+        crosshair_snapped_x => undef,
 
         # =====================================================
         # COLORS
@@ -124,15 +138,15 @@ sub new {
 sub bind_events {
     my ($self) = @_;
 
-    my @canvases = (
-        $self->{price_canvas},
-        $self->{atr_canvas}
-    );
+    my $pc = $self->{price_canvas};
+    my $ac = $self->{atr_canvas};
+
+    my @canvases = ($pc, $ac);
 
     for my $canvas (@canvases) {
 
         # =====================================================
-        # WINDOWS ZOOM
+        # SCROLL: chart area -> H-zoom / axis area -> V-zoom
         # =====================================================
 
         $canvas->CanvasBind(
@@ -140,29 +154,50 @@ sub bind_events {
             '<MouseWheel>' => sub {
 
                 my $event = $Tk::event;
+                my $cw = $canvas->Width
+                    - $self->{right_axis_width};
 
-                if ($event->delta > 0) {
+                if ($event->x > $cw) {
 
-                    $self->zoom_in($event->x);
+                    if ($event->delta > 0) {
+
+                        $self->zoom_vertical_in();
+
+                    } else {
+
+                        $self->zoom_vertical_out();
+                    }
 
                 } else {
 
-                    $self->zoom_out($event->x);
+                    if ($event->delta > 0) {
+
+                        $self->zoom_in();
+
+                    } else {
+
+                        $self->zoom_out();
+                    }
                 }
             }
         );
-
-        # =====================================================
-        # LINUX ZOOM
-        # =====================================================
 
         $canvas->CanvasBind(
 
             '<Button-4>' => sub {
 
                 my $event = $Tk::event;
+                my $cw = $canvas->Width
+                    - $self->{right_axis_width};
 
-                $self->zoom_in($event->x);
+                if ($event->x > $cw) {
+
+                    $self->zoom_vertical_in();
+
+                } else {
+
+                    $self->zoom_in();
+                }
             }
         );
 
@@ -171,13 +206,22 @@ sub bind_events {
             '<Button-5>' => sub {
 
                 my $event = $Tk::event;
+                my $cw = $canvas->Width
+                    - $self->{right_axis_width};
 
-                $self->zoom_out($event->x);
+                if ($event->x > $cw) {
+
+                    $self->zoom_vertical_out();
+
+                } else {
+
+                    $self->zoom_out();
+                }
             }
         );
 
         # =====================================================
-        # CTRL ZOOM VERTICAL (WINDOWS)
+        # CTRL+SCROLL -> centered horizontal zoom
         # =====================================================
 
         $canvas->CanvasBind(
@@ -188,24 +232,20 @@ sub bind_events {
 
                 if ($event->delta > 0) {
 
-                    $self->zoom_vertical_in();
+                    $self->zoom_in_centered();
 
                 } else {
 
-                    $self->zoom_vertical_out();
+                    $self->zoom_out_centered();
                 }
             }
         );
-
-        # =====================================================
-        # CTRL ZOOM VERTICAL (LINUX)
-        # =====================================================
 
         $canvas->CanvasBind(
 
             '<Control-Button-4>' => sub {
 
-                $self->zoom_vertical_in();
+                $self->zoom_in_centered();
             }
         );
 
@@ -213,7 +253,7 @@ sub bind_events {
 
             '<Control-Button-5>' => sub {
 
-                $self->zoom_vertical_out();
+                $self->zoom_out_centered();
             }
         );
 
@@ -232,8 +272,19 @@ sub bind_events {
                 $self->{drag_start_x} =
                     $event->x;
 
+                $self->{drag_start_y} =
+                    $event->y;
+
                 $self->{drag_initial_offset}
                     = $self->{offset};
+
+                $self->{vertical_dragging} = 0;
+
+                $self->{vertical_drag_start_y}
+                    = $event->y;
+
+                $self->{vertical_drag_initial_pan}
+                    = $self->{vertical_pan};
             }
         );
 
@@ -248,7 +299,8 @@ sub bind_events {
                 my $event = $Tk::event;
 
                 $self->drag_chart(
-                    $event->x
+                    $event->x,
+                    $event->y
                 );
             }
         );
@@ -262,6 +314,8 @@ sub bind_events {
             '<ButtonRelease-1>' => sub {
 
                 $self->{dragging} = 0;
+
+                $self->{vertical_dragging} = 0;
             }
         );
 
@@ -278,8 +332,18 @@ sub bind_events {
                 $self->{mouse_x} =
                     $event->x;
 
-                $self->{mouse_y} =
-                    $event->y;
+                if (
+                    $canvas == $ac
+                ) {
+
+                    $self->{mouse_y_atr}
+                        = $event->y;
+
+                } else {
+
+                    $self->{mouse_y}
+                        = $event->y;
+                }
 
                 $self->draw_crosshair();
             }
@@ -297,7 +361,12 @@ sub bind_events {
 
                 $self->{mouse_y} = undef;
 
+                $self->{mouse_y_atr} = undef;
+
                 $self->{crosshair_index}
+                    = undef;
+
+                $self->{crosshair_snapped_x}
                     = undef;
 
                 $self->draw_crosshair();
@@ -308,8 +377,6 @@ sub bind_events {
     # =====================================================
     # KEYBOARD SHORTCUTS (price canvas)
     # =====================================================
-
-    my $pc = $self->{price_canvas};
 
     $pc->CanvasBind(
         '<Key-1>' => sub {
@@ -359,7 +426,7 @@ sub set_timeframe {
 # =========================================================
 
 sub zoom_in {
-    my ($self, $mouse_x) = @_;
+    my ($self) = @_;
 
     my $old = $self->{visible_bars};
     my $new = int($old * 0.85);
@@ -367,13 +434,26 @@ sub zoom_in {
     $new = $self->{min_visible_bars}
         if $new < $self->{min_visible_bars};
 
-    $self->_apply_zoom($old, $new, $mouse_x);
+    # Right-anchored: mantiene fija la ultima vela
+    $self->{offset} =
+        $self->{offset} + $old - $new;
+
+    $self->{visible_bars} = $new;
+
+    my $total =
+        $self->{market_data}->size();
+
+    my $max_offset =
+        $total - $new;
+
+    $self->{offset} = $max_offset
+        if $self->{offset} > $max_offset;
 
     $self->render_incremental();
 }
 
 sub zoom_out {
-    my ($self, $mouse_x) = @_;
+    my ($self) = @_;
 
     my $old = $self->{visible_bars};
     my $new = int($old * 1.15);
@@ -381,65 +461,74 @@ sub zoom_out {
     $new = $self->{max_visible_bars}
         if $new > $self->{max_visible_bars};
 
-    $self->_apply_zoom($old, $new, $mouse_x);
+    # Right-anchored: mantiene fija la ultima vela
+    $self->{offset} =
+        $self->{offset} + $old - $new;
+
+    $self->{visible_bars} = $new;
+
+    my $min_offset =
+        -int($self->{visible_bars} / 2);
+
+    $self->{offset} = $min_offset
+        if $self->{offset} < $min_offset;
 
     $self->render_incremental();
 }
 
-sub _apply_zoom {
-    my ($self, $old_visible, $new_visible, $mouse_x) = @_;
+# =========================================================
+# CENTERED ZOOM (Ctrl+Scroll)
+# =========================================================
 
-    if (defined $mouse_x && $mouse_x >= 0) {
+sub zoom_in_centered {
+    my ($self) = @_;
 
-        my $price_width =
-            $self->{price_canvas}->Width;
+    my $old = $self->{visible_bars};
+    my $new = int($old * 0.85);
 
-        my $chart_width =
-            $price_width
-            - $self->{right_axis_width};
+    $new = $self->{min_visible_bars}
+        if $new < $self->{min_visible_bars};
 
-        if (
-            $chart_width > 0
-            && $old_visible > 0
-        ) {
+    my $center =
+        $self->{offset} + $old / 2;
 
-            my $fraction =
-                $mouse_x / $chart_width;
+    $self->{visible_bars} = $new;
 
-            $fraction = 0
-                if $fraction < 0;
+    $self->{offset} = int(
+        $center - $new / 2
+    );
 
-            $fraction = 1
-                if $fraction > 1;
+    $self->render_incremental();
+}
 
-            my $bar_under_mouse =
-                $self->{offset}
-                + $fraction * $old_visible;
+sub zoom_out_centered {
+    my ($self) = @_;
 
-            my $new_offset = int(
-                $bar_under_mouse
-                - $fraction * $new_visible
-            );
+    my $old = $self->{visible_bars};
+    my $new = int($old * 1.15);
 
-            $new_offset = 0
-                if $new_offset < 0;
+    $new = $self->{max_visible_bars}
+        if $new > $self->{max_visible_bars};
 
-            my $max_offset =
-                $self->{market_data}->size()
-                - $new_visible;
+    my $center =
+        $self->{offset} + $old / 2;
 
-            $max_offset = 0
-                if $max_offset < 0;
+    $self->{visible_bars} = $new;
 
-            $self->{offset} = $new_offset
-                if $new_offset <= $max_offset;
+    $self->{offset} = int(
+        $center - $new / 2
+    );
 
-            $self->{offset} = $max_offset
-                if $self->{offset} > $max_offset;
-        }
-    }
+    my $total =
+        $self->{market_data}->size();
 
-    $self->{visible_bars} = $new_visible;
+    my $max_offset =
+        $total - $new;
+
+    $self->{offset} = $max_offset
+        if $self->{offset} > $max_offset;
+
+    $self->render_incremental();
 }
 
 # =========================================================
@@ -477,36 +566,100 @@ sub zoom_vertical_out {
 # =========================================================
 
 sub drag_chart {
-    my ($self, $current_x) = @_;
+    my ($self, $current_x, $current_y) = @_;
 
     return unless $self->{dragging};
 
-    my $dx =
-        $current_x
-        - $self->{drag_start_x};
+    my $chart_width =
+        ($self->{_last_chart_width} //
+            ($self->{price_canvas}->Width
+            - $self->{right_axis_width}));
 
-    my $bars_moved =
-        int($dx / 8);
+    if (
+        $self->{drag_start_x}
+        > $chart_width
+    ) {
 
-    $self->{offset}
-        = $self->{drag_initial_offset}
-        - $bars_moved;
+        # =================================================
+        # VERTICAL DRAG (sobre escala de precios)
+        # =================================================
 
-    $self->{offset} = 0
-        if $self->{offset} < 0;
+        unless (
+            $self->{vertical_dragging}
+        ) {
 
-    my $max_offset =
-        $self->{market_data}->size()
-        - $self->{visible_bars};
+            $self->{vertical_dragging} = 1;
 
-    $max_offset = 0
-        if $max_offset < 0;
+            $self->{vertical_drag_start_y}
+                = $current_y;
 
-    $self->{offset}
-        = $max_offset
-        if $self->{offset} > $max_offset;
+            $self->{vertical_drag_initial_pan}
+                = $self->{vertical_pan};
+        }
 
-    $self->render_incremental();
+        my $dy =
+            $self->{vertical_drag_start_y}
+            - $current_y;
+
+        my $range = 100;
+
+        if (
+            $self->{_last_price_scale}
+        ) {
+
+            $range =
+                $self->{_last_price_scale}
+                ->{max_value}
+                - $self->{_last_price_scale}
+                ->{min_value};
+        }
+
+        my $price_per_pixel =
+            $range / 100;
+
+        $self->{vertical_pan}
+            = $self->{vertical_drag_initial_pan}
+            + $dy * $price_per_pixel;
+
+        $self->render_incremental();
+
+    } else {
+
+        # =================================================
+        # HORIZONTAL DRAG (con espacios vacios)
+        # =================================================
+
+        my $dx =
+            $current_x
+            - $self->{drag_start_x};
+
+        my $bars_moved =
+            int($dx / 8);
+
+        $self->{offset}
+            = $self->{drag_initial_offset}
+            - $bars_moved;
+
+        my $max_offset =
+            $self->{market_data}->size()
+            - $self->{visible_bars};
+
+        $self->{offset}
+            = $max_offset
+            if $self->{offset} > $max_offset;
+
+        my $min_offset =
+            -int(
+                $self->{visible_bars}
+                / 2
+            );
+
+        $self->{offset} = $min_offset
+            if $self->{offset}
+            < $min_offset;
+
+        $self->render_incremental();
+    }
 }
 
 # =========================================================
@@ -524,7 +677,8 @@ sub compute_window {
 
     my $end =
         $start
-        + $self->{visible_bars};
+        + $self->{visible_bars}
+        - 1;
 
     $end = $total - 1
         if $end >= $total;
@@ -564,9 +718,17 @@ sub render_incremental {
     my ($start, $end)
         = $self->compute_window();
 
+    # Support empty space: data_start never below 0
+    my $data_start = $start;
+    $data_start = 0
+        if $data_start < 0;
+
     my $data =
         $self->{market_data}
-        ->get_slice($start, $end);
+        ->get_slice(
+            $data_start,
+            $end
+        );
 
     return unless @$data;
 
@@ -635,16 +797,17 @@ sub render_incremental {
         / $self->{visible_bars};
 
     # =====================================================
-    # PRICE SCALE
+    # PRICE SCALE (con vertical_pan)
     # =====================================================
 
     my ($min_price, $max_price)
         = $self->{price_panel}
         ->get_y_range($data);
 
-    # apply vertical zoom
     my $center =
         ($min_price + $max_price) / 2;
+
+    $center += $self->{vertical_pan} // 0;
 
     my $half_range =
         ($max_price - $min_price) / 2
@@ -678,7 +841,7 @@ sub render_incremental {
         $self->{indicator_manager}
         ->slice_array(
             'atr',
-            $start,
+            $data_start,
             $end
         );
 
@@ -735,7 +898,9 @@ sub render_incremental {
 
         $price_scale,
 
-        $self
+        $self,
+
+        $data_start,
     );
 
     $self->{atr_panel}->render_dynamic(
@@ -746,7 +911,9 @@ sub render_incremental {
 
         $atr_scale,
 
-        $self
+        $self,
+
+        $data_start,
     );
 
     # =====================================================
@@ -814,14 +981,59 @@ sub draw_crosshair {
         unless defined $chart_width;
 
     # =====================================================
-    # PRICE CROSSHAIR LINES
+    # SNAP VERTICAL A VELA MAS CERCANA
+    # =====================================================
+
+    my $bar_width =
+        $chart_width
+        / $self->{visible_bars};
+
+    my $data =
+        $self->{_last_data};
+
+    my $snapped_x = $mx;
+
+    my $local_index = undef;
+
+    if (
+        $data
+        && $bar_width > 0
+    ) {
+
+        $local_index = int(
+            ($mx + $bar_width / 2)
+            / $bar_width
+        );
+
+        my $max_idx =
+            scalar @$data - 1;
+
+        $local_index = $max_idx
+            if $local_index > $max_idx;
+
+        $local_index = 0
+            if $local_index < 0;
+
+        $snapped_x =
+            ($local_index * $bar_width)
+            + ($bar_width / 2);
+    }
+
+    $self->{crosshair_snapped_x}
+        = $snapped_x;
+
+    $self->{crosshair_index}
+        = $local_index;
+
+    # =====================================================
+    # PRICE CROSSHAIR LINES (vertical snapped)
     # =====================================================
 
     $price_canvas->createLine(
 
-        $mx,
+        $snapped_x,
         0,
-        $mx,
+        $snapped_x,
         $chart_height,
 
         -fill =>
@@ -848,15 +1060,33 @@ sub draw_crosshair {
     );
 
     # =====================================================
-    # ATR CROSSHAIR LINE
+    # ATR CROSSHAIR LINES
     # =====================================================
+
+    my $my_atr =
+        $self->{mouse_y_atr} // $my;
 
     $atr_canvas->createLine(
 
-        $mx,
+        $snapped_x,
         0,
-        $mx,
+        $snapped_x,
         $atr_height,
+
+        -fill =>
+            $self->{crosshair_color},
+
+        -dash => '.',
+
+        -tags => 'crosshair',
+    );
+
+    $atr_canvas->createLine(
+
+        0,
+        $my_atr,
+        $chart_width,
+        $my_atr,
 
         -fill =>
             $self->{crosshair_color},

@@ -222,10 +222,13 @@ sub render_dynamic {
         $canvas,
         $data,
         $scale,
-        $engine
+        $engine,
+        $offset
     ) = @_;
 
     $self->{scale} = $scale;
+
+    $scale->snap_to_nice();
 
     my $width =
         $canvas->Width;
@@ -250,8 +253,11 @@ sub render_dynamic {
     my $bar_width =
         $scale->{bar_width};
 
+    my $visible_bars =
+        $engine->{visible_bars};
+
     # =====================================================
-    # PRICE LABELS
+    # PRICE LABELS (nice increments)
     # =====================================================
 
     my $min =
@@ -261,6 +267,9 @@ sub render_dynamic {
         $scale->{max_value};
 
     my $horizontal_lines = 10;
+
+    my $price_step =
+        ($max - $min) / $horizontal_lines;
 
     for my $i (0 .. $horizontal_lines) {
 
@@ -297,52 +306,135 @@ sub render_dynamic {
     }
 
     # =====================================================
-    # TIME LABELS
+    # TIME LABELS (pivot primer candle del dia)
     # =====================================================
 
     my $count =
         scalar @$data;
 
-    my $vertical_lines = 12;
+    if ($count > 0) {
 
-    for my $i (0 .. $vertical_lines - 1) {
+        my @label_indices;
+        my $prev_date = '';
 
-        my $index =
-            int(
-                ($count - 1)
-                * ($i / $vertical_lines)
+        for my $i (0 .. $count - 1) {
+
+            my $date =
+                substr(
+                    $data->[$i]{time},
+                    0,
+                    10
+                );
+
+            if (
+                $date ne $prev_date
+            ) {
+
+                push @label_indices,
+                    $i;
+
+                $prev_date = $date;
+            }
+        }
+
+        # Ultima vela historica como pivot
+        if (
+            @label_indices == 0
+            || $label_indices[-1]
+            != $count - 1
+        ) {
+
+            push @label_indices,
+                $count - 1;
+        }
+
+        # Limitar a 6 etiquetas
+        my $max_labels = 6;
+
+        if (
+            @label_indices
+            > $max_labels
+        ) {
+
+            my @sampled =
+                ($label_indices[0]);
+
+            my $step =
+                ($label_indices[-1]
+                - $label_indices[0])
+                / ($max_labels - 1);
+
+            for my $j (
+                1 .. $max_labels - 2
+            ) {
+
+                push @sampled,
+                    $label_indices[
+                        int(
+                            $j * $step
+                        )
+                    ];
+            }
+
+            push @sampled,
+                $label_indices[-1];
+
+            @label_indices =
+                @sampled;
+        }
+
+        for my $idx (@label_indices) {
+
+            next
+                if $idx >= $count;
+
+            my $candle =
+                $data->[$idx];
+
+            my $global_idx =
+                $offset + $idx;
+
+            my $viewport_idx =
+                $global_idx
+                - $engine->{offset};
+
+            next
+                if $viewport_idx < 0;
+
+            next
+                if $viewport_idx
+                >= $visible_bars;
+
+            my $x =
+                (
+                    $viewport_idx
+                    * $bar_width
+                ) + ($bar_width / 2);
+
+            next
+                if $x > $chart_width;
+
+            $canvas->createText(
+
+                $x,
+                $chart_height + 14,
+
+                -text =>
+                    $candle->{time},
+
+                -fill =>
+                    $engine->{text_color},
+
+                -font => [
+                    'Arial',
+                    8
+                ],
+
+                -anchor => 'n',
+
+                -tags => 'price_render',
             );
-
-        next
-            if $index >= $count;
-
-        my $candle =
-            $data->[$index];
-
-        my $x =
-            ($index * $bar_width)
-            + ($bar_width / 2);
-
-        $canvas->createText(
-
-            $x,
-            $chart_height + 14,
-
-            -text =>
-                $candle->{time},
-
-            -fill =>
-                $engine->{text_color},
-
-            -font => [
-                'Arial',
-                8
-            ],
-
-            -anchor => 'n',
-
-            -tags => 'price_render',
-        );
+        }
     }
 
     # =====================================================
@@ -354,12 +446,25 @@ sub render_dynamic {
         my $candle =
             $data->[$i];
 
-        my $x =
-            ($i * $bar_width)
-            + ($bar_width / 2);
+        my $global_idx =
+            $offset + $i;
+
+        my $viewport_idx =
+            $global_idx
+            - $engine->{offset};
 
         next
-            if $x < 0;
+            if $viewport_idx < 0;
+
+        next
+            if $viewport_idx
+            >= $visible_bars;
+
+        my $x =
+            (
+                $viewport_idx
+                * $bar_width
+            ) + ($bar_width / 2);
 
         next
             if $x > $chart_width;
@@ -487,22 +592,22 @@ sub render_crosshair_labels {
         $height
         - $bottom_axis_height;
 
-    my $bar_width =
-        $scale->{bar_width};
-
-    my $mx =
-        $engine->{mouse_x};
-
     my $my =
         $engine->{mouse_y};
 
+    my $snapped_x =
+        $engine->{crosshair_snapped_x};
+
+    my $index =
+        $engine->{crosshair_index};
+
     return
-        unless defined $mx
+        unless defined $snapped_x
         && defined $my;
 
     return
-        unless $mx >= 0
-        && $mx <= $chart_width
+        unless $snapped_x >= 0
+        && $snapped_x <= $chart_width
         && $my >= 0
         && $my <= $chart_height;
 
@@ -549,14 +654,12 @@ sub render_crosshair_labels {
     );
 
     # =====================================================
-    # TIME LABEL
+    # TIME LABEL (snapped)
     # =====================================================
 
-    my $index =
-        int($mx / $bar_width);
-
     if (
-        $index >= 0
+        defined $index
+        && $index >= 0
         && $index < @$data
     ) {
 
@@ -565,9 +668,9 @@ sub render_crosshair_labels {
 
         $canvas->createRectangle(
 
-            $mx - 40,
+            $snapped_x - 40,
             $chart_height,
-            $mx + 40,
+            $snapped_x + 40,
             $height,
 
             -fill =>
@@ -581,7 +684,7 @@ sub render_crosshair_labels {
 
         $canvas->createText(
 
-            $mx,
+            $snapped_x,
             $chart_height + 14,
 
             -text => $time,

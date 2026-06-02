@@ -3,6 +3,8 @@ package Market::Panels::Scales;
 use strict;
 use warnings;
 
+use POSIX qw(floor ceil);
+
 sub new {
     my ($class, %args) = @_;
 
@@ -258,6 +260,72 @@ sub clamp_y {
         if $y > $bottom;
 
     return $y;
+}
+
+sub snap_to_nice {
+    my ($self) = @_;
+
+    my $range =
+        $self->{max_value}
+        - $self->{min_value};
+
+    return
+        if $range <= 0;
+
+    my $num_steps = 10;
+
+    my $raw_step =
+        $range / $num_steps;
+
+    my $magnitude =
+        10 ** int(
+            log($raw_step)
+            / log(10)
+        );
+
+    $magnitude = 1
+        if $magnitude < 1;
+
+    my $normalized =
+        $raw_step / $magnitude;
+
+    my $nice = 1;
+
+    my @nice_nums = (
+        0.25,
+        0.5,
+        1,
+        2.5,
+        5,
+        10
+    );
+
+    for my $n (@nice_nums) {
+
+        if (
+            $normalized <= $n
+        ) {
+
+            $nice = $n;
+
+            last;
+        }
+    }
+
+    my $nice_step =
+        $nice * $magnitude;
+
+    $self->{min_value} =
+        floor(
+            $self->{min_value}
+            / $nice_step
+        ) * $nice_step;
+
+    $self->{max_value} =
+        ceil(
+            $self->{max_value}
+            / $nice_step
+        ) * $nice_step;
 }
 
 1;
