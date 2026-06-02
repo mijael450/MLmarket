@@ -89,7 +89,7 @@ my $tf_label = $toolbar->Label(
 
 my $shortcut_label = $toolbar->Label(
 
-    -text => '  |  Keys: 1=1m  5=5m  6=15m  |  Ctrl+Scroll=Zoom V  |  Drag=Scroll',
+    -text => '  |  Ctrl+Scroll=Zoom V  |  Drag=Scroll',
 
     -fg => '#64748b',
 
