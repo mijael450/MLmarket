@@ -428,21 +428,18 @@ sub set_timeframe {
 sub zoom_in {
     my ($self) = @_;
 
-    my $new = int(
-        $self->{visible_bars} * 0.85
-    );
+    my $old = $self->{visible_bars};
+    my $center = $self->{offset} + $old / 2;
 
+    my $new = int($old * 0.85);
     $new = $self->{min_visible_bars}
         if $new < $self->{min_visible_bars};
 
     $self->{visible_bars} = $new;
+    $self->{offset} = int($center - $new / 2);
 
-    my $total =
-        $self->{market_data}->size();
-
-    my $max_offset =
-        $total - $new;
-
+    my $total = $self->{market_data}->size();
+    my $max_offset = $total - $new;
     $self->{offset} = $max_offset
         if $self->{offset} > $max_offset;
 
@@ -452,14 +449,20 @@ sub zoom_in {
 sub zoom_out {
     my ($self) = @_;
 
-    my $new = int(
-        $self->{visible_bars} * 1.15
-    );
+    my $old = $self->{visible_bars};
+    my $center = $self->{offset} + $old / 2;
 
+    my $new = int($old * 1.15);
     $new = $self->{max_visible_bars}
         if $new > $self->{max_visible_bars};
 
     $self->{visible_bars} = $new;
+    $self->{offset} = int($center - $new / 2);
+
+    my $total = $self->{market_data}->size();
+    my $max_offset = $total - $new;
+    $self->{offset} = $max_offset
+        if $self->{offset} > $max_offset;
 
     $self->render_incremental();
 }
