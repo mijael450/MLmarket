@@ -428,15 +428,12 @@ sub set_timeframe {
 sub zoom_in {
     my ($self) = @_;
 
-    my $old = $self->{visible_bars};
-    my $new = int($old * 0.85);
+    my $new = int(
+        $self->{visible_bars} * 0.85
+    );
 
     $new = $self->{min_visible_bars}
         if $new < $self->{min_visible_bars};
-
-    # Right-anchored: mantiene fija la ultima vela
-    $self->{offset} =
-        $self->{offset} + $old - $new;
 
     $self->{visible_bars} = $new;
 
@@ -455,23 +452,14 @@ sub zoom_in {
 sub zoom_out {
     my ($self) = @_;
 
-    my $old = $self->{visible_bars};
-    my $new = int($old * 1.15);
+    my $new = int(
+        $self->{visible_bars} * 1.15
+    );
 
     $new = $self->{max_visible_bars}
         if $new > $self->{max_visible_bars};
 
-    # Right-anchored: mantiene fija la ultima vela
-    $self->{offset} =
-        $self->{offset} + $old - $new;
-
     $self->{visible_bars} = $new;
-
-    my $min_offset =
-        -int($self->{visible_bars} / 2);
-
-    $self->{offset} = $min_offset
-        if $self->{offset} < $min_offset;
 
     $self->render_incremental();
 }
